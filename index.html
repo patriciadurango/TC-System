@@ -230,7 +230,14 @@
 
     <div class="cap-field">
       <label>Nombre de quien recibe</label>
-      <input class="ipt" type="text" id="capRecibido" placeholder="Nombre de quien firma de recibido" autocomplete="off">
+      <select class="ipt" id="capRecibidoSelect">
+        <option value="">Selecciona quien recibe…</option>
+        <option value="Vicente Morales">Vicente Morales</option>
+        <option value="Jose Manuel Salvador">Jose Manuel Salvador</option>
+        <option value="Jose Manuel Morales">Jose Manuel Morales</option>
+        <option value="__otro__">Otro (escribir nombre)</option>
+      </select>
+      <input class="ipt" type="text" id="capRecibidoOtro" placeholder="Escribe el nombre de quien recibe" autocomplete="off" hidden style="margin-top:10px;">
     </div>
 
     <div class="cap-field">
@@ -591,7 +598,9 @@ function openBatch(assetKey){
   document.getElementById('photoPreviewWrap').hidden = true;
   document.getElementById('photoBtnWrap').hidden = false;
   document.getElementById('capPhotoInput').value = '';
-  document.getElementById('capRecibido').value = '';
+  document.getElementById('capRecibidoSelect').value = '';
+  document.getElementById('capRecibidoOtro').hidden = true;
+  document.getElementById('capRecibidoOtro').value = '';
   document.getElementById('capTitle').textContent = 'Registrar entrega — '+assetKey;
   const totalQty = activeBatchItems.reduce((s,a)=>s+(Number(a.cantidadPendiente)||0),0);
   document.getElementById('capSummary').innerHTML =
@@ -635,9 +644,25 @@ document.getElementById('btnRemovePhoto').addEventListener('click', ()=>{
   document.getElementById('photoBtnWrap').hidden = false;
 });
 
+document.getElementById('capRecibidoSelect').addEventListener('change', ()=>{
+  const otroInput = document.getElementById('capRecibidoOtro');
+  if(document.getElementById('capRecibidoSelect').value === '__otro__'){
+    otroInput.hidden = false;
+    otroInput.focus();
+  }else{
+    otroInput.hidden = true;
+    otroInput.value = '';
+  }
+});
+function getRecibidoValue(){
+  const sel = document.getElementById('capRecibidoSelect').value;
+  if(sel === '__otro__') return document.getElementById('capRecibidoOtro').value.trim();
+  return sel;
+}
+
 document.getElementById('btnCapConfirm').addEventListener('click', ()=>{
   hideCapError();
-  const recibido = document.getElementById('capRecibido').value.trim();
+  const recibido = getRecibidoValue();
   if(activeBatchItems.length===0) return;
   const itemRows = Array.from(document.querySelectorAll('#batchItemsList .batch-item'));
   const includedRows = itemRows.filter(row=>row.querySelector('.batchItemChk').checked);
