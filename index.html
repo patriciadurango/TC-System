@@ -19,7 +19,7 @@
     --bg:#F6F8FB; --panel:#ffffff; --border:#E2E8EF; --border-soft:#EDF1F5; --border-input:#D3DBE4;
     --text:#0F1720; --text-sec:#68747F; --text-sec2:#3C4854; --muted-icon:#8B97A3;
     --green:#0E7C56; --green-bg:#E6F4EE; --green-border:#C6E5D8; --green-dark:#0A6045;
-    --amber:#B25E00; --amber-bg:#FDF2E4; --amber-border:#F0D8AE;
+    --amber:#B25E00; --amber-bg:#FDF2E4; --amber-border:#F0D8AE; --amber-dark:#8B6021;
     --red:#C0392B; --red-bg:#FBECEA; --red-border:#F0C7C1; --red-dark:#8E2B20;
     --chip-bg:#F1F4F8; --chip-text:#3C4854;
     --shadow-sm:0 1px 3px rgba(15,23,32,.06); --shadow-md:0 8px 24px rgba(15,23,32,.10); --shadow-lg:0 24px 60px rgba(0,0,0,.30);
@@ -79,8 +79,13 @@
 
   /* ---------- cards ---------- */
   .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding:4px 18px 18px;}
+  .supplier-section{padding:14px 18px 4px;}
+  .supplier-section:first-child{padding-top:8px;}
+  .supplier-heading{display:flex;align-items:baseline;gap:8px;font:800 13.5px/1.4 var(--sans);color:var(--navy-700);text-transform:uppercase;letter-spacing:.03em;padding-bottom:10px;margin-bottom:14px;border-bottom:2px solid var(--border);}
+  .supplier-heading .supplier-count{font:600 12px/1.4 var(--sans);color:var(--text-sec);text-transform:none;letter-spacing:0;}
+  .supplier-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;padding-bottom:8px;}
   .alert-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:10px;}
-  .alert-card .asset{font:800 15px/1.2 var(--mono);color:var(--navy-700);}
+  .alert-card .asset{font:800 20px/1.25 var(--mono);color:var(--navy-700);}
   .alert-card .desc{font:600 13.5px/1.4 var(--sans);color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .alert-card .meta{font:500 12px/1.6 var(--sans);color:var(--text-sec);}
   .alert-card .meta b{color:var(--text-sec2);}
@@ -120,6 +125,7 @@
   .bi-check input{width:22px;height:22px;}
   .bi-body{flex:1;min-width:0;}
   .bi-desc{font:700 13.5px/1.4 var(--sans);color:var(--text);}
+  .batch-item .bi-meta{font:800 13.5px/1.6 var(--sans);color:var(--amber-dark);margin-top:4px;}
   .bi-meta{font:500 11.5px/1.6 var(--sans);color:var(--text-sec);margin-top:3px;}
   .bi-qty{flex:none;width:108px;}
   .bi-qty label{display:block;font:700 11px/1 var(--sans);color:var(--text-sec);margin-bottom:6px;}
@@ -156,7 +162,7 @@
   .confirm-actions{display:flex;gap:10px;justify-content:flex-end;}
 
   @media (max-width:640px){
-    .cards-grid{grid-template-columns:1fr;}
+    .cards-grid,.supplier-cards{grid-template-columns:1fr;}
     .tab-btn{max-width:none;}
   }
 </style>
@@ -198,10 +204,10 @@
   <div class="tab-body">
     <div id="panelPendientes">
       <div class="toolbar">
-        <input class="ipt" type="text" id="searchAlerts" placeholder="Buscar por asset, descripción, PO o requisición…">
+        <input class="ipt" type="text" id="searchAlerts" placeholder="Buscar por asset, proveedor, descripción, PO o requisición…">
       </div>
       <div class="sync-note" id="syncNote">Sincronizado en tiempo real con TC System — el material que ya se entregó desaparece solo de esta lista.</div>
-      <div class="cards-grid" id="alertsList"></div>
+      <div id="alertsList"></div>
     </div>
 
     <div id="panelEntregas" hidden>
@@ -235,6 +241,7 @@
         <option value="Vicente Morales">Vicente Morales</option>
         <option value="Jose Manuel Salvador">Jose Manuel Salvador</option>
         <option value="Jose Manuel Morales">Jose Manuel Morales</option>
+        <option value="Moises Lara">Moises Lara</option>
         <option value="__otro__">Otro (escribir nombre)</option>
       </select>
       <input class="ipt" type="text" id="capRecibidoOtro" placeholder="Escribe el nombre de quien recibe" autocomplete="off" hidden style="margin-top:10px;">
@@ -315,7 +322,16 @@ const SEED_ALERTS = [{"tcId": 4, "requisicion": 2363, "division": "TLM LAND", "l
 
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-let alerts = SEED_ALERTS.map(a=>({...a}));
+/* Partidas sin asset asignado o que son certificaciones/calibraciones no son
+   material que el almacén pueda retirar físicamente — se excluyen de pendientes. */
+function isPickupEligibleClient(a){
+  const asset = String(a.asset||'').trim();
+  if(asset==='' || asset.toUpperCase()==='NA') return false;
+  if(/CERTIFICA|CERTFICA/i.test(String(a.descripcion||''))) return false;
+  return true;
+}
+
+let alerts = SEED_ALERTS.filter(isPickupEligibleClient).map(a=>({...a}));
 let deliveries = [];
 let entregadorName = '';
 let activeBatchAsset = null;
@@ -331,6 +347,29 @@ function groupByAsset(list){
     map.get(key).push(a);
   });
   return map;
+}
+
+function supplierName(raw){
+  const s = String(raw||'').trim();
+  if(!s) return 'Sin proveedor';
+  const m = s.match(/\(([^)]+)\)/);
+  if(m && m[1].trim()) return m[1].trim();
+  return s;
+}
+
+function groupBySupplier(list){
+  const map = new Map();
+  list.forEach(a=>{
+    const key = supplierName(a.supplier);
+    if(!map.has(key)) map.set(key, []);
+    map.get(key).push(a);
+  });
+  return map;
+}
+
+function poLabelFor(items){
+  const first = esc(items[0].poConsignmentId || '—');
+  return items.length>1 ? 'PO/Consigna '+first+' (+'+(items.length-1)+' más)' : 'PO/Consigna '+first;
 }
 
 /* ==================== TOAST ==================== */
@@ -385,7 +424,7 @@ document.getElementById('btnEndShift').addEventListener('click', async ()=>{
   const ok = await showConfirm('¿Cambiar de turno? Se cerrará la sesión de '+entregadorName+'.');
   if(!ok) return;
   entregadorName='';
-  alerts = SEED_ALERTS.map(a=>({...a}));
+  alerts = SEED_ALERTS.filter(isPickupEligibleClient).map(a=>({...a}));
   deliveries = [];
   nameInput.value='';
   document.getElementById('screenMain').hidden = true;
@@ -411,7 +450,8 @@ function filteredAlerts(){
     String(a.asset||'').toLowerCase().includes(q) ||
     String(a.descripcion||'').toLowerCase().includes(q) ||
     String(a.poConsignmentId||'').toLowerCase().includes(q) ||
-    String(a.requisicion||'').toLowerCase().includes(q)
+    String(a.requisicion||'').toLowerCase().includes(q) ||
+    supplierName(a.supplier).toLowerCase().includes(q)
   );
 }
 document.getElementById('searchAlerts').addEventListener('input', renderAlerts);
@@ -421,26 +461,33 @@ function renderAlerts(){
   document.getElementById('tabPendientes').textContent = 'Pendientes por recoger ('+alerts.length+')';
   const wrap = document.getElementById('alertsList');
   if(list.length===0){
-    wrap.innerHTML = '<div class="empty-block" style="grid-column:1/-1;"><h3>'+(alerts.length===0?'No hay alertas pendientes':'Sin resultados')+'</h3><p>'+(alerts.length===0?'Cuando en TC System haya material listo para consignación/PO sin recibo, aparecerá aquí automáticamente.':'Prueba con otro asset, descripción o PO.')+'</p></div>';
+    wrap.innerHTML = '<div class="empty-block"><h3>'+(alerts.length===0?'No hay alertas pendientes':'Sin resultados')+'</h3><p>'+(alerts.length===0?'Cuando en TC System haya material listo para consignación/PO sin recibo, aparecerá aquí automáticamente.':'Prueba con otro asset, proveedor, descripción o PO.')+'</p></div>';
     return;
   }
-  const groups = groupByAsset(list);
-  const cardsHtml = Array.from(groups.entries()).map(([assetKey, items])=>{
-    const totalQty = items.reduce((s,a)=>s+(Number(a.cantidadPendiente)||0),0);
-    const location = items[0].location || '';
-    const sample = items.slice(0,2).map(a=>esc(a.descripcion||'sin descripción')).join('; ');
-    const extra = items.length>2 ? ' y '+(items.length-2)+' más' : '';
-    return '<div class="alert-card">'+
-      '<div class="asset">'+esc(assetKey)+'</div>'+
-      '<div class="desc">'+sample+extra+'</div>'+
-      '<div class="meta">'+esc(location)+' &nbsp;·&nbsp; <b>'+items.length+'</b> partida(s) pendiente(s)</div>'+
-      '<span class="qty">Total piezas pendientes: '+totalQty+'</span>'+
-      '<button type="button" class="btn btn-deliver" data-asset="'+esc(assetKey)+'">Entregar ('+items.length+' partida'+(items.length===1?'':'s')+')</button>'+
+  const bySupplier = groupBySupplier(list);
+  const supplierKeys = Array.from(bySupplier.keys()).sort((a,b)=> a.localeCompare(b,'es'));
+  wrap.innerHTML = supplierKeys.map(sup=>{
+    const supItems = bySupplier.get(sup);
+    const groups = groupByAsset(supItems);
+    const cardsHtml = Array.from(groups.entries()).map(([assetKey, items])=>{
+      const totalQty = items.reduce((s,a)=>s+(Number(a.cantidadPendiente)||0),0);
+      const sample = items.slice(0,2).map(a=>esc(a.descripcion||'sin descripción')).join('; ');
+      const extra = items.length>2 ? ' y '+(items.length-2)+' más' : '';
+      return '<div class="alert-card">'+
+        '<div class="asset">'+esc(assetKey)+'</div>'+
+        '<div class="desc">'+sample+extra+'</div>'+
+        '<div class="meta">'+poLabelFor(items)+' &nbsp;·&nbsp; <b>'+items.length+'</b> partida(s) pendiente(s)</div>'+
+        '<span class="qty">Total piezas pendientes: '+totalQty+'</span>'+
+        '<button type="button" class="btn btn-deliver" data-asset="'+esc(assetKey)+'" data-supplier="'+esc(sup)+'">Entregar ('+items.length+' partida'+(items.length===1?'':'s')+')</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="supplier-section">'+
+      '<div class="supplier-heading">'+esc(sup)+' <span class="supplier-count">('+supItems.length+' partida'+(supItems.length===1?'':'s')+')</span></div>'+
+      '<div class="supplier-cards">'+cardsHtml+'</div>'+
     '</div>';
   }).join('');
-  wrap.innerHTML = cardsHtml;
   wrap.querySelectorAll('[data-asset]').forEach(btn=>{
-    btn.addEventListener('click', ()=> openBatch(btn.dataset.asset));
+    btn.addEventListener('click', ()=> openBatch(btn.dataset.asset, btn.dataset.supplier));
   });
 }
 
@@ -589,9 +636,12 @@ function hideCapError(){
   document.getElementById('capError').classList.remove('show');
 }
 
-function openBatch(assetKey){
+function openBatch(assetKey, supplierKey){
   activeBatchAsset = assetKey;
-  activeBatchItems = alerts.filter(a=> (String(a.asset||'').trim() || '(sin asset)') === assetKey);
+  activeBatchItems = alerts.filter(a=>
+    (String(a.asset||'').trim() || '(sin asset)') === assetKey &&
+    (!supplierKey || supplierName(a.supplier) === supplierKey)
+  );
   if(activeBatchItems.length===0) return;
   hideCapError();
   capturedPhoto = null;
@@ -605,7 +655,7 @@ function openBatch(assetKey){
   const totalQty = activeBatchItems.reduce((s,a)=>s+(Number(a.cantidadPendiente)||0),0);
   document.getElementById('capSummary').innerHTML =
     '<div class="asset">'+esc(assetKey)+'</div>'+
-    '<div class="meta">'+esc(activeBatchItems[0].location||'')+' · '+activeBatchItems.length+' partida(s) · '+totalQty+' pza(s) pendientes en total</div>';
+    '<div class="meta">'+esc(supplierKey || supplierName(activeBatchItems[0].supplier))+' · '+activeBatchItems.length+' partida(s) · '+totalQty+' pza(s) pendientes en total</div>';
   renderBatchItems();
   document.getElementById('screenCapture').hidden = false;
   setupSignaturePad();
